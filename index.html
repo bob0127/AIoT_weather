@@ -9,6 +9,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <!-- Supabase Client Library -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <!-- Ambient Lighting Effects -->
@@ -331,6 +333,104 @@
           </div>
         </div>
 
+        <!-- Historical Weather Trends Section (Powered by Supabase Database) -->
+        <div class="history-section">
+          <div class="section-subtitle history-section-header">
+            <span>📈 歷史氣象趨勢記錄</span>
+            <div class="history-controls">
+              <!-- 縣市地區選擇下拉式選單 -->
+              <select id="select-history-county" class="select-chip select-chip-county" aria-label="選擇縣市地區">
+                <optgroup label="北部地區">
+                  <option value="TWKEE">基隆市</option>
+                  <option value="TWTPE" selected>臺北市</option>
+                  <option value="TWNWT">新北市</option>
+                  <option value="TWTAO">桃園市</option>
+                  <option value="TWHSZ">新竹市</option>
+                  <option value="TWHSQ">新竹縣</option>
+                </optgroup>
+                <optgroup label="中部地區">
+                  <option value="TWMIA">苗栗縣</option>
+                  <option value="TWTXG">臺中市</option>
+                  <option value="TWCHA">彰化縣</option>
+                  <option value="TWNAN">南投縣</option>
+                  <option value="TWYUN">雲林縣</option>
+                </optgroup>
+                <optgroup label="南部地區">
+                  <option value="TWCYI">嘉義市</option>
+                  <option value="TWCYQ">嘉義縣</option>
+                  <option value="TWTNN">臺南市</option>
+                  <option value="TWKHH">高雄市</option>
+                  <option value="TWPIF">屏東縣</option>
+                </optgroup>
+                <optgroup label="東部地區">
+                  <option value="TWILA">宜蘭縣</option>
+                  <option value="TWHUA">花蓮縣</option>
+                  <option value="TWTTT">臺東縣</option>
+                </optgroup>
+                <optgroup label="離島地區">
+                  <option value="TWPEN">澎湖縣</option>
+                  <option value="TWKIN">金門縣</option>
+                  <option value="TWLIE">連江縣</option>
+                </optgroup>
+              </select>
+
+              <!-- 指標選擇下拉式選單 -->
+              <select id="select-history-metric" class="select-chip" aria-label="選擇歷史指標">
+                <option value="temperature" selected>🌡️ 氣溫 (°C)</option>
+                <option value="humidity">💧 濕度 (%)</option>
+                <option value="rainfall">🌧️ 降雨 (mm)</option>
+                <option value="pm25">🌫️ PM2.5 (μg/m³)</option>
+              </select>
+
+              <!-- 時間範圍標籤切換 -->
+              <div class="history-time-tabs">
+                <button class="time-tab active" data-range="24h">24H</button>
+                <button class="time-tab" data-range="7d">7天</button>
+                <button class="time-tab" data-range="30d">30天</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="history-chart-card">
+            <div class="chart-stats-row">
+              <div class="chart-stat-item">
+                <span class="stat-lbl">平均</span>
+                <span class="stat-val" id="chart-avg-val">--</span>
+              </div>
+              <div class="chart-stat-item">
+                <span class="stat-lbl">最高</span>
+                <span class="stat-val stat-max" id="chart-max-val">--</span>
+              </div>
+              <div class="chart-stat-item">
+                <span class="stat-lbl">最低</span>
+                <span class="stat-val stat-min" id="chart-min-val">--</span>
+              </div>
+              <div class="chart-stat-item">
+                <span class="stat-lbl">筆數</span>
+                <span class="stat-val" id="chart-count-val">--</span>
+              </div>
+              <div class="chart-stat-item db-status-tag" id="db-status-badge">
+                <span class="db-dot"></span>
+                <span id="db-status-text">本機模擬</span>
+              </div>
+            </div>
+
+            <!-- Canvas interactive line/area chart -->
+            <div class="canvas-chart-container">
+              <canvas id="history-chart" width="540" height="190"></canvas>
+              <div class="chart-tooltip" id="chart-tooltip"></div>
+            </div>
+
+            <div class="chart-footer-row">
+              <span id="chart-range-info">過去 24 小時觀測歷史曲線</span>
+              <button id="btn-sync-db" class="btn-text-action" title="將當前全台即時天氣快照寫入資料庫">
+                <span id="sync-btn-icon">⚡</span>
+                <span id="sync-btn-text">寫入當前快照</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Lifestyle Recommendations Section -->
         <div>
           <div class="section-subtitle" style="margin-bottom: 0.65rem;">
@@ -396,14 +496,34 @@
   <div class="modal-backdrop" id="settings-modal" role="dialog" aria-modal="true">
     <div class="modal-window">
       <div class="modal-header">
-        <h3 class="modal-title">⚙️ API 金鑰與資料來源設定</h3>
+        <h3 class="modal-title">⚙️ API 金鑰與資料庫連線設定</h3>
         <button class="btn-close-modal" id="btn-close-settings" aria-label="關閉">&times;</button>
       </div>
+      
+      <!-- CWA Section -->
       <div class="form-group">
         <label class="form-label" for="input-api-key">中央氣象署 (CWA) 授權碼 / API Key</label>
         <input type="text" id="input-api-key" class="form-input" placeholder="請輸入 CWA-XXXXXXXX-XXXX..." value="CWA-3DCCCFFB-6B6A-43B7-8746-25D0B4BA03E4">
         <span style="font-size: 0.75rem; color: var(--text-dim);">金鑰若遺失或請求超時，系統將自動啟動 22 縣市完整模擬降級資料。</span>
       </div>
+
+      <!-- Supabase Section -->
+      <div class="modal-divider"></div>
+      <div class="form-group">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+          <label class="form-label" style="margin-bottom: 0;" for="input-supabase-url">🗄️ Supabase 資料庫連線 (歷史天氣趨勢)</label>
+          <span class="db-status-chip" id="modal-db-status">未連接</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+          <input type="text" id="input-supabase-url" class="form-input" placeholder="專案網址 (例: https://xyzcompany.supabase.co)">
+          <input type="password" id="input-supabase-key" class="form-input" placeholder="公開匿名金鑰 anon public key (例: eyJhbGciOi...)">
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.35rem;">
+          <span style="font-size: 0.75rem; color: var(--text-dim);">可在 Supabase「Project Settings → API」取得 URL 與 anon key。未填寫時將自動展示本機連續模擬數據。</span>
+          <button type="button" class="btn-action" id="btn-test-supabase" style="white-space: nowrap; font-size: 0.75rem; padding: 0.3rem 0.6rem;">測試連線</button>
+        </div>
+      </div>
+
       <div class="form-group">
         <label class="form-label">資料來源切換</label>
         <div style="display: flex; gap: 0.6rem;">
@@ -414,7 +534,7 @@
       <div id="settings-msg" style="font-size: 0.8rem; min-height: 1.2rem;"></div>
       <div class="modal-actions">
         <button class="btn-action" id="btn-cancel-settings">取消</button>
-        <button class="btn-primary" id="btn-save-settings">儲存並測試連線</button>
+        <button class="btn-primary" id="btn-save-settings">儲存設定</button>
       </div>
     </div>
   </div>

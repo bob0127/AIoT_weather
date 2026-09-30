@@ -202,6 +202,7 @@ function generateMockData() {
 }
 
 // Application State
+// Application State
 const AppState = {
   apiKey: localStorage.getItem('cwa_api_key') || CWA_API_KEY,
   isMockMode: false,
@@ -212,7 +213,18 @@ const AppState = {
   labelsVisible: true,
   zoomLevel: 1,
   panX: 0,
-  panY: 0
+  panY: 0,
+  // Supabase Database & Historical Trends State
+  supabaseUrl: localStorage.getItem('supabase_url') || '',
+  supabaseKey: localStorage.getItem('supabase_key') || '',
+  supabaseClient: null,
+  dbStatus: 'disconnected', // 'connected' | 'disconnected'
+  historyCountyId: 'TWTPE',
+  historyMetric: 'temperature',
+  historyRange: '24h',
+  historyCache: {},
+  currentChartPoints: [],
+  lastDbSyncTime: 0
 };
 
 // DOM Elements
@@ -272,30 +284,62 @@ const elements = {
   lifeClothing: document.getElementById('life-clothing'),
   lifeSport: document.getElementById('life-sport'),
   lifeVentilation: document.getElementById('life-ventilation'),
+  // History Chart & Supabase Elements
+  selectHistoryCounty: document.getElementById('select-history-county'),
+  selectHistoryMetric: document.getElementById('select-history-metric'),
+  historyTimeTabs: document.querySelectorAll('.history-time-tabs .time-tab'),
+  chartAvgVal: document.getElementById('chart-avg-val'),
+  chartMaxVal: document.getElementById('chart-max-val'),
+  chartMinVal: document.getElementById('chart-min-val'),
+  chartCountVal: document.getElementById('chart-count-val'),
+  dbStatusBadge: document.getElementById('db-status-badge'),
+  dbStatusText: document.getElementById('db-status-text'),
+  historyChart: document.getElementById('history-chart'),
+  chartTooltip: document.getElementById('chart-tooltip'),
+  chartRangeInfo: document.getElementById('chart-range-info'),
+  btnSyncDb: document.getElementById('btn-sync-db'),
+  syncBtnText: document.getElementById('sync-btn-text'),
+  syncBtnIcon: document.getElementById('sync-btn-icon'),
+  // Settings Modal Elements
   settingsModal: document.getElementById('settings-modal'),
   btnCloseSettings: document.getElementById('btn-close-settings'),
   btnCancelSettings: document.getElementById('btn-cancel-settings'),
   btnSaveSettings: document.getElementById('btn-save-settings'),
   inputApiKey: document.getElementById('input-api-key'),
+  inputSupabaseUrl: document.getElementById('input-supabase-url'),
+  inputSupabaseKey: document.getElementById('input-supabase-key'),
+  modalDbStatus: document.getElementById('modal-db-status'),
+  btnTestSupabase: document.getElementById('btn-test-supabase'),
   btnForceLive: document.getElementById('btn-force-live'),
   btnForceMock: document.getElementById('btn-force-mock'),
   settingsMsg: document.getElementById('settings-msg')
 };
 
-// Populate County Selector Dropdown
+// Populate County Selector Dropdowns (Sync map with dropdowns)
 function initCountySelector() {
-  elements.selectCounty.innerHTML = '';
-  Object.keys(COUNTY_METADATA).forEach(id => {
-    const meta = COUNTY_METADATA[id];
-    const opt = document.createElement('option');
-    opt.value = id;
-    opt.textContent = `${meta.name} (${meta.region})`;
-    elements.selectCounty.appendChild(opt);
-  });
-  elements.selectCounty.value = AppState.selectedCountyId;
-  elements.selectCounty.addEventListener('change', e => {
-    selectCounty(e.target.value);
-  });
+  if (elements.selectHistoryCounty) {
+    elements.selectHistoryCounty.value = AppState.selectedCountyId;
+    elements.selectHistoryCounty.addEventListener('change', e => {
+      const selectedId = e.target.value;
+      AppState.historyCountyId = selectedId;
+      selectCounty(selectedId);
+    });
+  }
+
+  if (elements.selectCounty) {
+    elements.selectCounty.innerHTML = '';
+    Object.keys(COUNTY_METADATA).forEach(id => {
+      const meta = COUNTY_METADATA[id];
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = `${meta.name} (${meta.region})`;
+      elements.selectCounty.appendChild(opt);
+    });
+    elements.selectCounty.value = AppState.selectedCountyId;
+    elements.selectCounty.addEventListener('change', e => {
+      selectCounty(e.target.value);
+    });
+  }
 }
 
 // Fetch Weather Data from CWA API (F-C0032-001 & O-A0003-001) with Fallback
@@ -429,6 +473,8 @@ async function loadWeatherData(forceMock = false) {
     const now = new Date();
     elements.lastUpdatedText.textContent = `更新於 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
+    // Auto-sync snapshot to Supabase if connected
+    saveWeatherSnapshotToDb(false);
   } catch (err) {
     console.error('CWA API fetch failed:', err);
     useFallbackMockData('展示模擬數據模式 (CWA連線異常/降級)');
@@ -488,7 +534,14 @@ function updateDetailCard(countyId) {
   if (!meta || !data) return;
 
   AppState.selectedCountyId = countyId;
-  elements.selectCounty.value = countyId;
+  AppState.historyCountyId = countyId;
+
+  if (elements.selectCounty) {
+    elements.selectCounty.value = countyId;
+  }
+  if (elements.selectHistoryCounty && elements.selectHistoryCounty.value !== countyId) {
+    elements.selectHistoryCounty.value = countyId;
+  }
 
   // Update Active Styling on SVG Path
   const allPaths = elements.taiwanSvg.querySelectorAll('.county');
@@ -593,6 +646,9 @@ function updateDetailCard(countyId) {
   elements.lifeClothing.textContent = data.temp > 28 ? '短袖透氣排汗' : (data.temp < 22 ? '加穿防風外套' : '薄長袖或短袖搭薄外套');
   elements.lifeSport.textContent = data.pop >= 70 ? '建議室內運動' : (pm25Val > 54 ? '減少室外劇烈活動' : '適合各類戶外休閒');
   elements.lifeVentilation.textContent = pm25Val <= 35 ? '空氣品質佳，適宜開窗' : '空氣微差，減少開窗時間';
+
+  // Load & draw historical weather trends for the selected county
+  loadCountyHistory(countyId, AppState.historyRange, AppState.historyMetric);
 }
 
 // Floating Tooltip Interactions
@@ -795,10 +851,499 @@ function updateThemeIcon(theme) {
   elements.themeIcon.textContent = theme === 'dark' ? '🌙' : '☀️';
 }
 
-// Settings Modal (API Key & Data Source Control)
+// ==============================================================================
+// Supabase Database & Historical Weather Trends
+// ==============================================================================
+
+// Initialize Supabase Client
+function initSupabaseClient() {
+  if (typeof window.supabase !== 'undefined' && AppState.supabaseUrl && AppState.supabaseKey) {
+    try {
+      AppState.supabaseClient = window.supabase.createClient(AppState.supabaseUrl, AppState.supabaseKey);
+      AppState.dbStatus = 'connected';
+      if (elements.dbStatusText) elements.dbStatusText.textContent = 'Supabase 連線中';
+      if (elements.dbStatusBadge) {
+        const dot = elements.dbStatusBadge.querySelector('.db-dot');
+        if (dot) dot.classList.remove('disconnected');
+      }
+      if (elements.modalDbStatus) {
+        elements.modalDbStatus.textContent = '已連線';
+        elements.modalDbStatus.className = 'db-status-chip connected';
+      }
+    } catch (e) {
+      console.warn('Supabase initialization failed:', e);
+      AppState.dbStatus = 'disconnected';
+    }
+  } else {
+    AppState.dbStatus = 'disconnected';
+    if (elements.dbStatusText) elements.dbStatusText.textContent = '本機模擬';
+    if (elements.dbStatusBadge) {
+      const dot = elements.dbStatusBadge.querySelector('.db-dot');
+      if (dot) dot.classList.add('disconnected');
+    }
+    if (elements.modalDbStatus) {
+      elements.modalDbStatus.textContent = '未連接 (本機模擬)';
+      elements.modalDbStatus.className = 'db-status-chip';
+    }
+  }
+}
+
+// Test Supabase Connection
+async function testSupabaseConnection(url, key) {
+  if (typeof window.supabase === 'undefined') {
+    return { success: false, message: 'Supabase JS 函式庫尚未載入，請確認網路連線' };
+  }
+  try {
+    const client = window.supabase.createClient(url, key);
+    const { data, error } = await client.from('weather_history').select('id').limit(1);
+    if (error) {
+      return { success: false, message: `連線失敗: ${error.message}` };
+    }
+    return { success: true, message: '連線成功！已成功存取 weather_history 資料表' };
+  } catch (err) {
+    return { success: false, message: `連線錯誤: ${err.message}` };
+  }
+}
+
+// Save Current 22 Counties Weather Snapshot to Supabase
+async function saveWeatherSnapshotToDb(isManual = false) {
+  if (!AppState.supabaseClient) {
+    if (isManual) {
+      alert('請先點擊右上角「⚙️ 設定」輸入 Supabase 專案網址與 anon key 才能寫入雲端資料庫！');
+    }
+    return;
+  }
+
+  // Throttle automatic writes to once every 10 minutes
+  const now = Date.now();
+  if (!isManual && now - AppState.lastDbSyncTime < 10 * 60 * 1000) {
+    return;
+  }
+
+  try {
+    if (elements.syncBtnIcon) elements.syncBtnIcon.textContent = '⏳';
+    if (elements.syncBtnText) elements.syncBtnText.textContent = '正在寫入...';
+
+    const timestamp = new Date().toISOString();
+    const rows = Object.keys(AppState.countyData).map(id => {
+      const c = AppState.countyData[id];
+      return {
+        county_id: id,
+        county_name: c.name,
+        temperature: Number(c.temp),
+        humidity: Number(c.humidity),
+        rainfall: Number(c.rainfall),
+        pm25: Number(c.pm25),
+        pop: Number(c.pop),
+        weather_desc: c.wx,
+        recorded_at: timestamp
+      };
+    });
+
+    const { error } = await AppState.supabaseClient.from('weather_history').insert(rows);
+    if (error) throw error;
+
+    AppState.lastDbSyncTime = now;
+    // Invalidate local history cache
+    AppState.historyCache = {};
+
+    if (elements.syncBtnIcon) elements.syncBtnIcon.textContent = '✅';
+    if (elements.syncBtnText) elements.syncBtnText.textContent = '已成功寫入！';
+    setTimeout(() => {
+      if (elements.syncBtnIcon) elements.syncBtnIcon.textContent = '⚡';
+      if (elements.syncBtnText) elements.syncBtnText.textContent = '寫入當前快照';
+    }, 2000);
+
+    // Refresh current county chart
+    loadCountyHistory(AppState.historyCountyId, AppState.historyRange, AppState.historyMetric);
+  } catch (err) {
+    console.error('Supabase write error:', err);
+    if (elements.syncBtnIcon) elements.syncBtnIcon.textContent = '⚠️';
+    if (elements.syncBtnText) elements.syncBtnText.textContent = '寫入失敗';
+    setTimeout(() => {
+      if (elements.syncBtnIcon) elements.syncBtnIcon.textContent = '⚡';
+      if (elements.syncBtnText) elements.syncBtnText.textContent = '寫入當前快照';
+    }, 2500);
+  }
+}
+
+// Generate Realistic Continuous Historical Data Simulation
+function generateSimulatedHistory(countyId, rangeKey, metricKey) {
+  const current = AppState.countyData[countyId] || { temp: 28, humidity: 70, rainfall: 0, pm25: 20, wx: '多雲' };
+  const points = [];
+  const now = new Date();
+
+  let count = 13; // 24h: every 2h
+  let stepHours = 2;
+
+  if (rangeKey === '7d') {
+    count = 14; // 7 days: every 12h
+    stepHours = 12;
+  } else if (rangeKey === '30d') {
+    count = 30; // 30 days: daily
+    stepHours = 24;
+  }
+
+  const baseTemp = current.temp || 28;
+  const baseHumidity = current.humidity || 70;
+  const basePm25 = current.pm25 || 20;
+
+  for (let i = count - 1; i >= 0; i--) {
+    const time = new Date(now.getTime() - i * stepHours * 3600 * 1000);
+    const hour = time.getHours();
+    
+    // Diurnal variation wave
+    const diurnal = Math.sin((hour - 8) / 12 * Math.PI); // peak around 14:00, trough around 02:00
+    const noise = (Math.sin(i * 1.7) * 0.8);
+
+    const temp = Number((baseTemp + diurnal * 3.5 + noise).toFixed(1));
+    const humidity = Math.max(30, Math.min(99, Math.round(baseHumidity - diurnal * 12 + noise * 4)));
+    const pm25 = Math.max(5, Math.round(basePm25 + (Math.cos(i * 1.2) * 6)));
+    const rainfall = Math.max(0, Number((current.rainfall > 0 ? Math.max(0, current.rainfall + noise * 1.5) : (i % 6 === 0 ? 0.8 : 0)).toFixed(1)));
+
+    points.push({
+      time: time,
+      timestamp: time.toISOString(),
+      temperature: temp,
+      humidity: humidity,
+      rainfall: rainfall,
+      pm25: pm25,
+      weather_desc: current.wx
+    });
+  }
+
+  // Ensure last point matches current live data closely
+  if (points.length) {
+    points[points.length - 1].temperature = current.temp;
+    points[points.length - 1].humidity = current.humidity;
+    points[points.length - 1].pm25 = current.pm25;
+    points[points.length - 1].rainfall = current.rainfall;
+  }
+
+  return points;
+}
+
+// Load County History from Supabase or Fallback Simulation
+async function loadCountyHistory(countyId, rangeKey = '24h', metricKey = 'temperature') {
+  const meta = COUNTY_METADATA[countyId];
+  if (!meta) return;
+
+  const cacheKey = `${countyId}_${rangeKey}`;
+  let records = [];
+
+  // Try Supabase if connected
+  if (AppState.supabaseClient) {
+    try {
+      let hoursAgo = 24;
+      if (rangeKey === '7d') hoursAgo = 24 * 7;
+      if (rangeKey === '30d') hoursAgo = 24 * 30;
+
+      const since = new Date(Date.now() - hoursAgo * 3600 * 1000).toISOString();
+      const { data, error } = await AppState.supabaseClient
+        .from('weather_history')
+        .select('*')
+        .eq('county_id', countyId)
+        .gte('recorded_at', since)
+        .order('recorded_at', { ascending: true });
+
+      if (!error && data && data.length >= 2) {
+        records = data.map(d => ({
+          time: new Date(d.recorded_at),
+          timestamp: d.recorded_at,
+          temperature: parseFloat(d.temperature),
+          humidity: parseFloat(d.humidity),
+          rainfall: parseFloat(d.rainfall || 0),
+          pm25: parseFloat(d.pm25 || 0),
+          weather_desc: d.weather_desc || '多雲'
+        }));
+        if (elements.dbStatusText) elements.dbStatusText.textContent = 'Supabase 實時';
+      }
+    } catch (e) {
+      console.warn('Failed to query Supabase history:', e);
+    }
+  }
+
+  // If no DB data or disconnected, generate simulated history
+  if (!records || records.length < 2) {
+    if (!AppState.historyCache[cacheKey]) {
+      AppState.historyCache[cacheKey] = generateSimulatedHistory(countyId, rangeKey, metricKey);
+    }
+    records = AppState.historyCache[cacheKey];
+  }
+
+  // Calculate Summary Statistics
+  const values = records.map(r => r[metricKey]).filter(v => v !== null && !isNaN(v));
+  if (values.length) {
+    const sum = values.reduce((a, b) => a + b, 0);
+    const avg = sum / values.length;
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+
+    let unit = '°C';
+    let decimals = 1;
+    if (metricKey === 'humidity') { unit = '%'; decimals = 0; }
+    if (metricKey === 'rainfall') { unit = 'mm'; decimals = 1; }
+    if (metricKey === 'pm25') { unit = 'μg'; decimals = 0; }
+
+    if (elements.chartAvgVal) elements.chartAvgVal.textContent = `${avg.toFixed(decimals)} ${unit}`;
+    if (elements.chartMaxVal) elements.chartMaxVal.textContent = `${max.toFixed(decimals)} ${unit}`;
+    if (elements.chartMinVal) elements.chartMinVal.textContent = `${min.toFixed(decimals)} ${unit}`;
+    if (elements.chartCountVal) elements.chartCountVal.textContent = `${records.length} 筆`;
+  }
+
+  const rangeTextMap = { '24h': '過去 24 小時', '7d': '過去 7 天', '30d': '過去 30 天' };
+  const metricTextMap = { 'temperature': '氣溫折線圖', 'humidity': '相對濕度趨勢', 'rainfall': '累積降雨趨勢', 'pm25': 'PM2.5 細懸浮微粒趨勢' };
+  if (elements.chartRangeInfo) {
+    elements.chartRangeInfo.textContent = `${meta.name} • ${rangeTextMap[rangeKey] || '24H'} ${metricTextMap[metricKey] || '氣溫折線圖'}`;
+  }
+
+  // Render Canvas Chart
+  renderHistoryChart(records, metricKey, rangeKey);
+}
+
+// Render Interactive Canvas Line Chart
+function renderHistoryChart(points, metricKey, rangeKey) {
+  const canvas = elements.historyChart;
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+
+  const width = rect.width || 500;
+  const height = rect.height || 190;
+
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  ctx.scale(dpr, dpr);
+
+  ctx.clearRect(0, 0, width, height);
+
+  if (!points || points.length < 2) {
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '12px Outfit, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('載入資料中...', width / 2, height / 2);
+    return;
+  }
+
+  // Metric styling configurations
+  const metricThemes = {
+    temperature: { stroke: '#38bdf8', fillStart: 'rgba(56, 189, 248, 0.35)', fillEnd: 'rgba(56, 189, 248, 0.0)', dot: '#38bdf8', unit: '°C' },
+    humidity: { stroke: '#10b981', fillStart: 'rgba(16, 185, 129, 0.35)', fillEnd: 'rgba(16, 185, 129, 0.0)', dot: '#10b981', unit: '%' },
+    rainfall: { stroke: '#a855f7', fillStart: 'rgba(168, 85, 247, 0.35)', fillEnd: 'rgba(168, 85, 247, 0.0)', dot: '#a855f7', unit: 'mm' },
+    pm25: { stroke: '#f59e0b', fillStart: 'rgba(245, 158, 11, 0.35)', fillEnd: 'rgba(245, 158, 11, 0.0)', dot: '#f59e0b', unit: 'μg/m³' }
+  };
+  const theme = metricThemes[metricKey] || metricThemes.temperature;
+
+  // Chart Layout Margins
+  const padLeft = 38;
+  const padRight = 16;
+  const padTop = 18;
+  const padBottom = 26;
+
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
+
+  const vals = points.map(p => p[metricKey]);
+  let minVal = Math.min(...vals);
+  let maxVal = Math.max(...vals);
+
+  // Buffer range
+  if (minVal === maxVal) {
+    minVal -= 2;
+    maxVal += 2;
+  }
+  const span = maxVal - minVal;
+  minVal = Math.floor(minVal - span * 0.1);
+  maxVal = Math.ceil(maxVal + span * 0.15);
+  const valRange = maxVal - minVal;
+
+  // Calculate coordinates
+  const coords = points.map((p, idx) => {
+    const x = padLeft + (idx / (points.length - 1)) * plotW;
+    const y = padTop + plotH - ((p[metricKey] - minVal) / valRange) * plotH;
+    return { x, y, point: p };
+  });
+
+  AppState.currentChartPoints = coords;
+
+  // 1. Draw Horizontal Reference Grid Lines
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
+  ctx.lineWidth = 1;
+  ctx.fillStyle = '#64748b';
+  ctx.font = '10px Outfit, sans-serif';
+  ctx.textAlign = 'right';
+
+  const gridSteps = 3;
+  for (let s = 0; s <= gridSteps; s++) {
+    const gy = padTop + (s / gridSteps) * plotH;
+    const gVal = maxVal - (s / gridSteps) * valRange;
+    ctx.beginPath();
+    ctx.moveTo(padLeft, gy);
+    ctx.lineTo(width - padRight, gy);
+    ctx.stroke();
+    ctx.fillText(`${Math.round(gVal)}`, padLeft - 6, gy + 3);
+  }
+
+  // 2. Draw Smooth Area Gradient
+  const grad = ctx.createLinearGradient(0, padTop, 0, padTop + plotH);
+  grad.addColorStop(0, theme.fillStart);
+  grad.addColorStop(1, theme.fillEnd);
+
+  ctx.beginPath();
+  ctx.moveTo(coords[0].x, padTop + plotH);
+  ctx.lineTo(coords[0].x, coords[0].y);
+
+  for (let i = 0; i < coords.length - 1; i++) {
+    const xc = (coords[i].x + coords[i + 1].x) / 2;
+    const yc = (coords[i].y + coords[i + 1].y) / 2;
+    ctx.quadraticCurveTo(coords[i].x, coords[i].y, xc, yc);
+  }
+  const last = coords[coords.length - 1];
+  ctx.lineTo(last.x, last.y);
+  ctx.lineTo(last.x, padTop + plotH);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // 3. Draw Line Path
+  ctx.beginPath();
+  ctx.moveTo(coords[0].x, coords[0].y);
+  for (let i = 0; i < coords.length - 1; i++) {
+    const xc = (coords[i].x + coords[i + 1].x) / 2;
+    const yc = (coords[i].y + coords[i + 1].y) / 2;
+    ctx.quadraticCurveTo(coords[i].x, coords[i].y, xc, yc);
+  }
+  ctx.lineTo(last.x, last.y);
+  ctx.strokeStyle = theme.stroke;
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // 4. Draw Glowing Data Point Dots
+  coords.forEach((c, idx) => {
+    // Only draw select dots to keep clean on large series
+    if (coords.length > 15 && idx % 2 !== 0 && idx !== coords.length - 1) return;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = theme.stroke;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#0f172a';
+    ctx.stroke();
+  });
+
+  // 5. Draw X-Axis Time / Date Labels
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '10px Outfit, Noto Sans TC, sans-serif';
+  ctx.textAlign = 'center';
+
+  const labelStep = Math.max(1, Math.floor(points.length / 5));
+  for (let i = 0; i < points.length; i += labelStep) {
+    const pt = points[i];
+    const c = coords[i];
+    let timeLabel = '';
+    const d = new Date(pt.time);
+
+    if (rangeKey === '24h') {
+      timeLabel = `${String(d.getHours()).padStart(2, '0')}:00`;
+    } else {
+      timeLabel = `${d.getMonth() + 1}/${d.getDate()}`;
+    }
+    ctx.fillText(timeLabel, c.x, height - 6);
+  }
+}
+
+// Chart Interactive Hover Tracking
+function initChartInteractions() {
+  const canvas = elements.historyChart;
+  const tooltip = elements.chartTooltip;
+  if (!canvas || !tooltip) return;
+
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+
+    if (!AppState.currentChartPoints || !AppState.currentChartPoints.length) return;
+
+    // Find closest point by X coordinate
+    let closest = AppState.currentChartPoints[0];
+    let minDist = Math.abs(mouseX - closest.x);
+
+    for (let i = 1; i < AppState.currentChartPoints.length; i++) {
+      const dist = Math.abs(mouseX - AppState.currentChartPoints[i].x);
+      if (dist < minDist) {
+        minDist = dist;
+        closest = AppState.currentChartPoints[i];
+      }
+    }
+
+    if (closest && minDist < 35) {
+      const p = closest.point;
+      const metric = AppState.historyMetric;
+      const unitMap = { temperature: '°C', humidity: '%', rainfall: 'mm', pm25: 'μg/m³' };
+      const val = p[metric];
+      const d = new Date(p.time);
+      const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+      tooltip.innerHTML = `
+        <div style="font-size: 0.7rem; opacity: 0.8; margin-bottom: 2px;">${timeStr}</div>
+        <div style="font-weight: 700; font-size: 0.85rem; color: #38bdf8;">${val} ${unitMap[metric]}</div>
+        <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 1px;">${p.weather_desc || ''}</div>
+      `;
+      tooltip.style.left = `${closest.x}px`;
+      tooltip.style.top = `${closest.y}px`;
+      tooltip.style.display = 'block';
+    } else {
+      tooltip.style.display = 'none';
+    }
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    tooltip.style.display = 'none';
+  });
+}
+
+// Initialize Historical Controls (Dropdowns, Tabs, Sync button)
+function initHistoryChartControls() {
+  // Metric selector dropdown
+  if (elements.selectHistoryMetric) {
+    elements.selectHistoryMetric.addEventListener('change', e => {
+      AppState.historyMetric = e.target.value;
+      loadCountyHistory(AppState.historyCountyId, AppState.historyRange, AppState.historyMetric);
+    });
+  }
+
+  // Time range tabs
+  if (elements.historyTimeTabs) {
+    elements.historyTimeTabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        elements.historyTimeTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        AppState.historyRange = tab.getAttribute('data-range');
+        loadCountyHistory(AppState.historyCountyId, AppState.historyRange, AppState.historyMetric);
+      });
+    });
+  }
+
+  // Sync snapshot button
+  if (elements.btnSyncDb) {
+    elements.btnSyncDb.addEventListener('click', () => {
+      saveWeatherSnapshotToDb(true);
+    });
+  }
+
+  initChartInteractions();
+}
+
+// Settings Modal (API Key, Supabase Database & Data Source Control)
 function initSettingsModal() {
   elements.btnSettings.addEventListener('click', () => {
     elements.inputApiKey.value = AppState.apiKey;
+    if (elements.inputSupabaseUrl) elements.inputSupabaseUrl.value = AppState.supabaseUrl;
+    if (elements.inputSupabaseKey) elements.inputSupabaseKey.value = AppState.supabaseKey;
     elements.settingsMsg.textContent = '';
     elements.settingsModal.classList.add('open');
   });
@@ -811,16 +1356,46 @@ function initSettingsModal() {
     if (e.target === elements.settingsModal) closeModal();
   });
 
-  // Save Key & Re-fetch
+  // Test Supabase Connection Button
+  if (elements.btnTestSupabase) {
+    elements.btnTestSupabase.addEventListener('click', async () => {
+      const url = elements.inputSupabaseUrl.value.trim();
+      const key = elements.inputSupabaseKey.value.trim();
+      if (!url || !key) {
+        elements.settingsMsg.style.color = '#eab308';
+        elements.settingsMsg.textContent = '請先填寫 Supabase 專案網址與 anon key';
+        return;
+      }
+      elements.settingsMsg.style.color = '#38bdf8';
+      elements.settingsMsg.textContent = '連線測試中...';
+      const result = await testSupabaseConnection(url, key);
+      elements.settingsMsg.style.color = result.success ? '#10b981' : '#f43f5e';
+      elements.settingsMsg.textContent = result.message;
+    });
+  }
+
+  // Save Settings & Re-fetch
   elements.btnSaveSettings.addEventListener('click', async () => {
     const key = elements.inputApiKey.value.trim();
     AppState.apiKey = key;
     localStorage.setItem('cwa_api_key', key);
+
+    // Save Supabase credentials
+    if (elements.inputSupabaseUrl && elements.inputSupabaseKey) {
+      const sUrl = elements.inputSupabaseUrl.value.trim();
+      const sKey = elements.inputSupabaseKey.value.trim();
+      AppState.supabaseUrl = sUrl;
+      AppState.supabaseKey = sKey;
+      localStorage.setItem('supabase_url', sUrl);
+      localStorage.setItem('supabase_key', sKey);
+      initSupabaseClient();
+    }
+
     elements.settingsMsg.style.color = '#38bdf8';
-    elements.settingsMsg.textContent = '金鑰已儲存，正在連線測試 CWA API...';
+    elements.settingsMsg.textContent = '設定已儲存，正在重新整理天氣數據...';
     await loadWeatherData(false);
     elements.settingsMsg.style.color = '#10b981';
-    elements.settingsMsg.textContent = '連線測試完成！';
+    elements.settingsMsg.textContent = '更新完成！';
     setTimeout(closeModal, 800);
   });
 
@@ -842,6 +1417,11 @@ elements.btnRefresh.addEventListener('click', () => {
   loadWeatherData(false);
 });
 
+// Window Resize Redraw Chart
+window.addEventListener('resize', () => {
+  loadCountyHistory(AppState.historyCountyId, AppState.historyRange, AppState.historyMetric);
+});
+
 // App Initialization
 document.addEventListener('DOMContentLoaded', () => {
   initCountySelector();
@@ -849,6 +1429,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initMapInteractions();
   initMapControls();
   initThemeToggle();
+  initSupabaseClient();
+  initHistoryChartControls();
   initSettingsModal();
 
   // Load initial weather data
