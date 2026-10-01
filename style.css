@@ -9,7 +9,7 @@
   --bg-card-solid: #111a2e;
   --bg-glass: rgba(255, 255, 255, 0.04);
   --bg-pill: rgba(255, 255, 255, 0.07);
-  
+
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-focus: rgba(56, 189, 248, 0.5);
   --border-bright: rgba(255, 255, 255, 0.2);
@@ -72,7 +72,9 @@
 /* ==========================================================================
    Reset & Base Styles
    ========================================================================== */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -100,6 +102,7 @@ body {
   pointer-events: none;
   z-index: 0;
 }
+
 .ambient-glow-2 {
   position: fixed;
   bottom: -100px;
@@ -198,16 +201,19 @@ body {
   font-weight: 600;
   transition: all 0.25s ease;
 }
+
 .status-pill.online {
   background: rgba(16, 185, 129, 0.15);
   color: #10b981;
   border: 1px solid rgba(16, 185, 129, 0.3);
 }
+
 .status-pill.mock {
   background: rgba(245, 158, 11, 0.15);
   color: #f59e0b;
   border: 1px solid rgba(245, 158, 11, 0.3);
 }
+
 .pulse-dot {
   width: 7px;
   height: 7px;
@@ -218,8 +224,17 @@ body {
 }
 
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(0.85); }
+
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
 }
 
 .header-controls {
@@ -243,14 +258,17 @@ body {
   gap: 0.45rem;
   transition: all 0.2s ease;
 }
+
 .btn-action:hover {
   background: var(--bg-card-hover);
   border-color: var(--border-bright);
   transform: translateY(-1px);
 }
+
 .btn-action:active {
   transform: translateY(0);
 }
+
 .btn-icon {
   padding: 0.5rem 0.65rem;
   font-size: 1rem;
@@ -259,8 +277,11 @@ body {
 .btn-refresh.spinning .icon-spin {
   animation: spin 0.8s linear infinite;
 }
+
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ==========================================================================
@@ -321,6 +342,7 @@ body {
   position: relative;
   overflow: hidden;
 }
+
 .btn-metric::before {
   content: '';
   position: absolute;
@@ -345,6 +367,7 @@ body {
   border-color: var(--border-focus);
   box-shadow: 0 4px 20px -4px rgba(56, 189, 248, 0.3);
 }
+
 .btn-metric.active::before {
   background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
 }
@@ -353,19 +376,23 @@ body {
   font-size: 1.4rem;
   line-height: 1;
 }
+
 .metric-btn-info {
   display: flex;
   flex-direction: column;
 }
+
 .metric-btn-name {
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-main);
 }
+
 .metric-btn-unit {
   font-size: 0.75rem;
   color: var(--text-dim);
 }
+
 .btn-metric.active .metric-btn-unit {
   color: var(--accent-sky);
   font-weight: 500;
@@ -432,11 +459,13 @@ body {
   cursor: pointer;
   transition: all 0.2s ease;
 }
+
 .region-chip:hover {
   background: var(--bg-card-hover);
   color: var(--text-main);
   border-color: var(--border-bright);
 }
+
 .region-chip.active {
   background: rgba(56, 189, 248, 0.2);
   border-color: rgba(56, 189, 248, 0.5);
@@ -464,6 +493,7 @@ body {
   cursor: pointer;
   transition: all 0.2s ease;
 }
+
 .btn-zoom:hover {
   background: var(--bg-card-hover);
   border-color: var(--border-bright);
@@ -479,6 +509,7 @@ body {
   cursor: grab;
   user-select: none;
 }
+
 .svg-stage:active {
   cursor: grabbing;
 }
@@ -492,7 +523,8 @@ body {
 
 /* SVG County Paths Styling */
 .county {
-  pointer-events: all; /* Required explicitly */
+  pointer-events: all;
+  /* Required explicitly */
   cursor: pointer;
   stroke: var(--map-stroke);
   stroke-width: 0.75px;
@@ -515,8 +547,17 @@ body {
 }
 
 @keyframes county-pulse {
-  0%, 100% { stroke: #38bdf8; stroke-width: 2.6px; }
-  50% { stroke: #f43f5e; stroke-width: 3.4px; }
+
+  0%,
+  100% {
+    stroke: #38bdf8;
+    stroke-width: 2.6px;
+  }
+
+  50% {
+    stroke: #f43f5e;
+    stroke-width: 3.4px;
+  }
 }
 
 /* County Map Labels */
@@ -534,6 +575,7 @@ body {
   opacity: 0.9;
   transition: opacity 0.2s ease;
 }
+
 .hide-labels .county-map-label {
   opacity: 0;
 }
@@ -561,6 +603,7 @@ body {
   justify-content: space-between;
   margin-bottom: 0.45rem;
 }
+
 .legend-title {
   font-size: 0.82rem;
   font-weight: 700;
@@ -569,6 +612,7 @@ body {
   align-items: center;
   gap: 0.4rem;
 }
+
 .legend-unit {
   font-size: 0.72rem;
   color: var(--text-dim);
@@ -582,6 +626,7 @@ body {
   margin-bottom: 0.45rem;
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
+
 .legend-bar-gradient {
   width: 100%;
   height: 100%;
@@ -631,6 +676,7 @@ body {
   transition: opacity 0.12s ease-out, transform 0.12s ease-out;
   min-width: 160px;
 }
+
 .map-tooltip.visible {
   opacity: 1;
 }
@@ -644,11 +690,13 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding-bottom: 0.25rem;
 }
+
 .tooltip-city-name {
   font-size: 1rem;
   font-weight: 700;
   color: #f8fafc;
 }
+
 .tooltip-region-badge {
   font-size: 0.68rem;
   padding: 0.1rem 0.45rem;
@@ -656,6 +704,7 @@ body {
   background: rgba(56, 189, 248, 0.2);
   color: #38bdf8;
 }
+
 .tooltip-metric-value {
   font-size: 1.35rem;
   font-weight: 800;
@@ -664,11 +713,13 @@ body {
   align-items: baseline;
   gap: 0.3rem;
 }
+
 .tooltip-metric-value small {
   font-size: 0.8rem;
   font-weight: 500;
   color: #94a3b8;
 }
+
 .tooltip-weather-row {
   font-size: 0.8rem;
   color: #cbd5e1;
@@ -707,17 +758,20 @@ body {
   display: flex;
   flex-direction: column;
 }
+
 .detail-city-name-row {
   display: flex;
   align-items: center;
   gap: 0.6rem;
 }
+
 .detail-city-name {
   font-size: 1.75rem;
   font-weight: 800;
   color: var(--text-main);
   line-height: 1.2;
 }
+
 .detail-region-tag {
   font-size: 0.75rem;
   font-weight: 600;
@@ -727,6 +781,7 @@ body {
   color: var(--accent-sky);
   border: 1px solid rgba(56, 189, 248, 0.3);
 }
+
 .detail-city-en {
   font-size: 0.85rem;
   color: var(--text-dim);
@@ -745,6 +800,11 @@ body {
   cursor: pointer;
   outline: none;
 }
+
+.select-county-dropdown option {
+  background-color: var(--bg-card);
+}
+
 .select-county-dropdown:focus {
   border-color: var(--border-focus);
 }
@@ -762,6 +822,7 @@ body {
   position: relative;
   overflow: hidden;
 }
+
 .hero-weather-banner::after {
   content: '';
   position: absolute;
@@ -778,21 +839,29 @@ body {
   align-items: center;
   gap: 1.25rem;
 }
+
 .hero-weather-icon {
   font-size: 3.5rem;
   line-height: 1;
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3));
   animation: float-icon 3s ease-in-out infinite alternate;
 }
+
 @keyframes float-icon {
-  from { transform: translateY(0px); }
-  to { transform: translateY(-6px); }
+  from {
+    transform: translateY(0px);
+  }
+
+  to {
+    transform: translateY(-6px);
+  }
 }
 
 .hero-weather-info {
   display: flex;
   flex-direction: column;
 }
+
 .hero-temp-val {
   font-size: 2.75rem;
   font-weight: 800;
@@ -802,11 +871,13 @@ body {
   align-items: baseline;
   gap: 0.25rem;
 }
+
 .hero-temp-val small {
   font-size: 1.25rem;
   color: var(--accent-sky);
   font-weight: 600;
 }
+
 .hero-desc-text {
   font-size: 1.05rem;
   font-weight: 600;
@@ -821,6 +892,7 @@ body {
   gap: 0.4rem;
   text-align: right;
 }
+
 .comfort-badge {
   font-size: 0.78rem;
   font-weight: 600;
@@ -830,6 +902,7 @@ body {
   color: #10b981;
   border: 1px solid rgba(16, 185, 129, 0.3);
 }
+
 .temp-range-text {
   font-size: 0.85rem;
   color: var(--text-muted);
@@ -842,6 +915,7 @@ body {
   grid-template-columns: repeat(2, 1fr);
   gap: 0.75rem;
 }
+
 .metric-subcard-span-2 {
   grid-column: span 2;
 }
@@ -856,6 +930,7 @@ body {
   gap: 0.4rem;
   transition: all 0.2s ease;
 }
+
 .metric-subcard:hover {
   border-color: var(--border-bright);
   transform: translateY(-2px);
@@ -866,6 +941,7 @@ body {
   align-items: center;
   justify-content: space-between;
 }
+
 .subcard-title {
   font-size: 0.8rem;
   font-weight: 600;
@@ -874,6 +950,7 @@ body {
   align-items: center;
   gap: 0.35rem;
 }
+
 .subcard-badge {
   font-size: 0.7rem;
   font-weight: 600;
@@ -888,12 +965,14 @@ body {
   align-items: baseline;
   gap: 0.3rem;
 }
+
 .subcard-value {
   font-size: 1.45rem;
   font-weight: 800;
   color: var(--text-main);
   line-height: 1;
 }
+
 .subcard-unit {
   font-size: 0.8rem;
   color: var(--text-dim);
@@ -909,6 +988,7 @@ body {
   overflow: hidden;
   margin-top: 0.2rem;
 }
+
 .micro-meter-fill {
   height: 100%;
   border-radius: var(--radius-full);
@@ -944,6 +1024,7 @@ body {
   gap: 0.35rem;
   transition: all 0.2s ease;
 }
+
 .forecast-card:hover {
   border-color: var(--border-bright);
   transform: translateY(-2px);
@@ -954,11 +1035,13 @@ body {
   font-weight: 600;
   color: var(--text-muted);
 }
+
 .forecast-card-icon {
   font-size: 1.8rem;
   line-height: 1.1;
   margin: 0.15rem 0;
 }
+
 .forecast-card-desc {
   font-size: 0.8rem;
   font-weight: 600;
@@ -968,11 +1051,13 @@ body {
   text-overflow: ellipsis;
   max-width: 100%;
 }
+
 .forecast-card-temp {
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--accent-sky);
 }
+
 .forecast-card-pop {
   font-size: 0.72rem;
   color: var(--text-dim);
@@ -994,19 +1079,23 @@ body {
   align-items: center;
   gap: 0.65rem;
 }
+
 .life-chip-icon {
   font-size: 1.25rem;
   line-height: 1;
 }
+
 .life-chip-text {
   display: flex;
   flex-direction: column;
 }
+
 .life-chip-title {
   font-size: 0.72rem;
   color: var(--text-dim);
   font-weight: 600;
 }
+
 .life-chip-status {
   font-size: 0.82rem;
   font-weight: 600;
@@ -1033,6 +1122,7 @@ body {
   pointer-events: none;
   transition: opacity 0.25s ease;
 }
+
 .modal-backdrop.open {
   opacity: 1;
   pointer-events: auto;
@@ -1052,6 +1142,7 @@ body {
   transform: scale(0.95);
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 .modal-backdrop.open .modal-window {
   transform: scale(1);
 }
@@ -1061,6 +1152,7 @@ body {
   align-items: center;
   justify-content: space-between;
 }
+
 .modal-title {
   font-size: 1.2rem;
   font-weight: 700;
@@ -1068,6 +1160,7 @@ body {
   align-items: center;
   gap: 0.5rem;
 }
+
 .btn-close-modal {
   background: none;
   border: none;
@@ -1076,6 +1169,7 @@ body {
   cursor: pointer;
   line-height: 1;
 }
+
 .btn-close-modal:hover {
   color: var(--text-main);
 }
@@ -1085,11 +1179,13 @@ body {
   flex-direction: column;
   gap: 0.45rem;
 }
+
 .form-label {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-muted);
 }
+
 .form-input {
   background: var(--bg-pill);
   border: 1px solid var(--border-subtle);
@@ -1101,6 +1197,7 @@ body {
   outline: none;
   transition: border-color 0.2s ease;
 }
+
 .form-input:focus {
   border-color: var(--border-focus);
 }
@@ -1111,6 +1208,7 @@ body {
   gap: 0.75rem;
   margin-top: 0.5rem;
 }
+
 .btn-primary {
   background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
   color: #ffffff;
@@ -1122,6 +1220,7 @@ body {
   cursor: pointer;
   transition: all 0.2s ease;
 }
+
 .btn-primary:hover {
   opacity: 0.92;
   transform: translateY(-1px);
@@ -1146,29 +1245,37 @@ body {
     padding: 0.85rem 0.85rem 2rem;
     gap: 0.85rem;
   }
+
   .app-header {
     flex-direction: column;
     align-items: flex-start;
   }
+
   .header-controls {
     width: 100%;
     justify-content: flex-end;
   }
+
   .svg-stage {
     height: 480px;
   }
+
   .metric-buttons-group {
     grid-template-columns: 1fr 1fr;
   }
+
   .detail-metrics-grid {
     grid-template-columns: 1fr;
   }
+
   .metric-subcard-span-2 {
     grid-column: span 1;
   }
+
   .forecast-cards-row {
     grid-template-columns: 1fr;
   }
+
   .legend-overlay {
     left: 0.75rem;
     right: 0.75rem;
