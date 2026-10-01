@@ -140,7 +140,7 @@ const METRIC_CONFIGS = {
       { val: 10, rgb: [239, 68, 68] }, // 對所有族群不健康 (紅)
       { val: 11, rgb: [168, 85, 247] },   // 非常不健康 / 危害 (紫)
     ],
-    gradientCss: 'linear-gradient(to right, #22c55e, #eab308, #f97316, #ef4444), #a855f7)',
+    gradientCss: 'linear-gradient(to right, #22c55e, #eab308, #f97316, #ef4444, #a855f7)',
     scaleLabels: ['0~2 (低量級)', '3~5 (中量級)', '6~8 (高量級)', '9~10 (過量級)', '11+ (危險級)'],
     format: v => `${Math.round(v)}`
   }
