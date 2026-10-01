@@ -128,7 +128,7 @@ const METRIC_CONFIGS = {
   uvindex: {
     id: 'uvindex',
     name: '紫外線',
-    unit: '(UV Index)',
+    unit: 'UV Index',
     icon: '🔆',
     min: 0,
     max: 11,
