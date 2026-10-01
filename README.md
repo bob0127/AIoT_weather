@@ -54,7 +54,7 @@
 | :--- | :--- | :--- |
 | **前端架構** | Vanilla HTML5, CSS3, JavaScript (ES6+) | 零外部前端框架、零 npm 打包負擔，隨開即跑 |
 | **圖資呈現** | Inline Vector SVG (ViewBox 1000x1000) | 台灣 22 縣市獨立路徑與幾何中心點標籤錨定 |
-| **資料來源** | [中央氣象署開放資料平臺 (CWA Open Data)](https://opendata.cwa.gov.tw/) | F-C0032-001 (一般天氣預報)、O-A0001-001 (自動氣象站) |
+| **資料來源** | [中央氣象署開放資料平臺 (CWA Open Data)](https://opendata.cwa.gov.tw/) | F-C0032-001 (一般天氣預報)、O-A0003-001 (自動氣象站) |
 | **環境資料** | [環境部環境資料開放平臺 (MOENV)](https://data.moenv.gov.tw/) | 全台空氣品質監測站即時 PM2.5 與 AQI 數據 |
 | **字體排版** | Google Fonts: Outfit & Noto Sans TC | 現代感無襯線英數搭配高辨識度繁體中文 |
 | **部署平臺** | Vercel (CI/CD 自動部署) | 靜態資源全球 CDN 加速 |
