@@ -124,6 +124,25 @@ const METRIC_CONFIGS = {
     gradientCss: 'linear-gradient(to right, #22c55e, #eab308, #f97316, #ef4444, #a855f7)',
     scaleLabels: ['0~15 (良好)', '16~35 (普通)', '36~54 (敏感不良)', '55~150 (不良)', '150+ (危害)'],
     format: v => `${Math.round(v)} μg/m³`
+  },
+  uvindex: {
+    id: 'uvindex',
+    name: '紫外線',
+    unit: '(UV Index)',
+    icon: '🔆',
+    min: 0,
+    max: 11,
+    stops: [
+      { val: 0, rgb: [34, 197, 94] },     // 良好 (綠)
+      { val: 2, rgb: [34, 197, 94] },  // 良好
+      { val: 5, rgb: [234, 179, 8] },  // 普通 (黃)
+      { val: 8, rgb: [249, 115, 22] }, // 對敏感族群不健康 (橘)
+      { val: 10, rgb: [239, 68, 68] }, // 對所有族群不健康 (紅)
+      { val: 11, rgb: [168, 85, 247] },   // 非常不健康 / 危害 (紫)
+    ],
+    gradientCss: 'linear-gradient(to right, #22c55e, #eab308, #f97316, #ef4444), #a855f7)',
+    scaleLabels: ['0~2 (低量級)', '3~5 (中量級)', '6~8 (高量級)', '9~10 (過量級)', '11+ (危險級)'],
+    format: v => `${Math.round(v)}`
   }
 };
 
@@ -267,6 +286,10 @@ const elements = {
   subPm25Val: document.getElementById('sub-pm25-val'),
   subPm25Advice: document.getElementById('sub-pm25-advice'),
   meterPm25: document.getElementById('meter-pm25'),
+  subUvBadge: document.getElementById('sub-uv-badge'),
+  subUvVal: document.getElementById('sub-uv-val'),
+  subUvAdvice: document.getElementById('sub-uv-advice'),
+  meterUv: document.getElementById('meter-uv'),
   forecastCardsContainer: document.getElementById('forecast-cards-container'),
   lifeUmbrella: document.getElementById('life-umbrella'),
   lifeClothing: document.getElementById('life-clothing'),
@@ -311,7 +334,7 @@ async function loadWeatherData(forceMock = false) {
   try {
     const forecastUrl = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-C0032-001?Authorization=${encodeURIComponent(AppState.apiKey)}&format=JSON`;
     const res = await fetch(forecastUrl, { method: 'GET', headers: { 'Accept': 'application/json' } });
-    
+
     if (!res.ok) {
       throw new Error(`CWA API 回應錯誤代碼 ${res.status}`);
     }
@@ -336,7 +359,8 @@ async function loadWeatherData(forceMock = false) {
               obsMap[cName] = {
                 temp: parseFloat(we.AirTemperature) || null,
                 humidity: parseFloat(we.RelativeHumidity) || null,
-                rainfall: parseFloat(we.Now && we.Now.Precipitation) || 0.0
+                rainfall: parseFloat(we.Now && we.Now.Precipitation) || 0.0,
+                uvindex: parseFloat(we.UVIndex) || 0.0
               };
             }
           });
@@ -397,6 +421,7 @@ async function loadWeatherData(forceMock = false) {
       const currentTemp = obs.temp !== null && obs.temp !== undefined ? obs.temp : Number(((minT + maxT) / 2).toFixed(1));
       const currentHumidity = obs.humidity !== null && obs.humidity !== undefined ? obs.humidity : (pop > 50 ? 78 : 65);
       const currentRainfall = obs.rainfall !== null && obs.rainfall !== undefined ? obs.rainfall : (pop > 70 ? 4.5 : 0.0);
+      const currentUV = obs.uvindex ?? 0.0;
 
       // Calibrate realistic PM2.5 based on region & moisture
       const meta = COUNTY_METADATA[id];
@@ -410,6 +435,7 @@ async function loadWeatherData(forceMock = false) {
       newCountyData[id] = {
         name: cName,
         temp: currentTemp,
+        uvindex: currentUV,
         minT,
         maxT,
         humidity: currentHumidity,
@@ -569,6 +595,39 @@ function updateDetailCard(countyId) {
   elements.subPm25Advice.textContent = pmAdvice;
   elements.meterPm25.style.width = `${Math.min(100, pmPercent)}%`;
   elements.meterPm25.style.background = pmColor;
+
+  // Subcard 6: UV
+  const uvVal = Math.round(data.uvindex);
+  elements.subUvVal.textContent = uvVal;
+  let uvBadge = '良好', uvColor = '#22c55e', uvAdvice = '空氣良好，宜進行戶外運動';
+  let uvPercent = (uvVal / 100) * 100;
+  if (uvVal <= 2) {
+    uvBadge = '低量級';
+    uvColor = '#22c55e';
+    uvAdvice = '一般正常外出安全無虞';
+  } else if (uvVal <= 5) {
+    uvBadge = '中量級';
+    uvColor = '#eab308';
+    uvAdvice = '外出建議塗抹防曬乳';
+  } else if (uvVal <= 7) {
+    uvBadge = '高量級';
+    uvColor = '#f97316';
+    uvAdvice = '在戶外容易曬傷與曬黑，做好防曬';
+  } else if (uvVal <= 10) {
+    uvBadge = '過量級';
+    uvColor = '#ef4444';
+    uvAdvice = '上午10點至下午3點應避免外出';
+  } else {
+    uvBadge = '危險級';
+    uvColor = '#a855f7';
+    uvAdvice = '短短數分鐘內就可能曬傷';
+  }
+  elements.subUvBadge.textContent = uvBadge;
+  elements.subUvBadge.style.color = uvColor;
+  elements.subUvBadge.style.background = `${uvColor}22`;
+  elements.subUvAdvice.textContent = uvAdvice;
+  elements.meterUv.style.width = `${Math.min(100, uvPercent)}%`;
+  elements.meterUv.style.background = uvColor;
 
   // 36-Hour Forecast Cards
   elements.forecastCardsContainer.innerHTML = '';
