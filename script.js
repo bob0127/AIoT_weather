@@ -347,22 +347,47 @@ async function loadWeatherData(forceMock = false) {
     // Try to optionally fetch observation data for live humidity/rainfall
     let obsMap = {};
     try {
-      const obsUrl = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0003-001?Authorization=${encodeURIComponent(AppState.apiKey)}&limit=100&format=JSON`;
+      const obsUrl = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0003-001?Authorization=${encodeURIComponent(AppState.apiKey)}&limit=1000&format=JSON`;
       const obsRes = await fetch(obsUrl);
+
       if (obsRes.ok) {
         const obsData = await obsRes.json();
         if (obsData.records && obsData.records.Station) {
+          const tempGroup = {};
+
+          // 1. 先搜集各縣市所有有效的測站數據
           obsData.records.Station.forEach(s => {
             const cName = (s.GeoInfo && s.GeoInfo.CountyName) ? s.GeoInfo.CountyName.replace(/台/g, '臺') : '';
-            if (cName && !obsMap[cName]) {
+            if (cName) {
+              if (!tempGroup[cName]) {
+                tempGroup[cName] = { temps: [], humidities: [], rainfalls: [], uvs: [] };
+              }
+
               const we = s.WeatherElement || {};
-              obsMap[cName] = {
-                temp: parseFloat(we.AirTemperature) || null,
-                humidity: parseFloat(we.RelativeHumidity) || null,
-                rainfall: parseFloat(we.Now && we.Now.Precipitation) || 0.0,
-                uvindex: parseFloat(we.UVIndex) || 0.0
-              };
+              const t = parseFloat(we.AirTemperature);
+              const h = parseFloat(we.RelativeHumidity);
+              const r = parseFloat(we.Now && we.Now.Precipitation);
+              const uv = parseFloat(we.UVIndex);
+
+              // 排除無效值 (-99 或 NaN)
+              if (!isNaN(t) && t > -50) tempGroup[cName].temps.push(t);
+              if (!isNaN(h) && h >= 0) tempGroup[cName].humidities.push(h);
+              if (!isNaN(r) && r >= 0) tempGroup[cName].rainfalls.push(r);
+              if (!isNaN(uv) && uv >= 0) tempGroup[cName].uvs.push(uv);
             }
+          });
+
+          // 2. 計算每個縣市的平均值或代表值
+          Object.keys(tempGroup).forEach(cName => {
+            const g = tempGroup[cName];
+            const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+
+            obsMap[cName] = {
+              temp: avg(g.temps) ? parseFloat(avg(g.temps).toFixed(1)) : null,
+              humidity: avg(g.humidities) ? Math.round(avg(g.humidities)) : null,
+              rainfall: avg(g.rainfalls) ? parseFloat(avg(g.rainfalls).toFixed(1)) : 0.0,
+              uvindex: avg(g.uvs) ? parseFloat(avg(g.uvs).toFixed(1)) : 0.0
+            };
           });
         }
       }
