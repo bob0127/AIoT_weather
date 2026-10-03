@@ -282,6 +282,32 @@
         </div>
       </section>
 
+      <!-- 7-Day Forecast Line Chart (Below Map, Left Column) -->
+      <section class="forecast-chart-card" id="forecast-chart-card" aria-label="未來七天預報折線圖">
+        <div class="forecast-chart-header">
+          <div class="forecast-chart-title-group">
+            <h3 class="forecast-chart-title">📈 未來七天天氣預報趨勢</h3>
+            <span class="forecast-chart-subtitle" id="forecast-chart-subtitle">當前指標：氣溫 (°C)</span>
+          </div>
+          <div class="forecast-chart-controls">
+            <div class="forecast-chart-status" id="forecast-chart-status">
+              <span class="pulse-dot" style="width:6px;height:6px;"></span>
+              <span id="forecast-chart-status-text">載入中...</span>
+            </div>
+          </div>
+        </div>
+        <div class="forecast-chart-canvas-wrap" id="forecast-chart-canvas-wrap">
+          <canvas id="forecast-chart-canvas" width="800" height="320"></canvas>
+          <div class="forecast-chart-loading" id="forecast-chart-loading">
+            <div class="chart-loading-spinner"></div>
+            <span>正在載入七天預報資料...</span>
+          </div>
+        </div>
+        <div class="forecast-chart-legend-row" id="forecast-chart-legend-row">
+          <!-- Dynamic legend items injected by JS -->
+        </div>
+      </section>
+
       <!-- Right Column: Detailed Weather Dashboard Card -->
       <section class="detail-card" id="detail-card" aria-label="縣市詳細氣象資訊">
         <!-- Detail Header -->
@@ -412,7 +438,7 @@
                 <span class="subcard-value" id="sub-uv-val">2</span>
                 <span class="subcard-unit"></span>
               </div>
-              <span style="font-size: 0.75rem; color: var(--text-dim);" id="sub-uv-advice">bitch</span>
+              <span style="font-size: 0.75rem; color: var(--text-dim);" id="sub-uv-advice">一般正常外出安全無虞</span>
             </div>
             <div class="micro-meter-track">
               <div class="micro-meter-fill" id="meter-uv" style="width: 15%; background: #22c55e;"></div>

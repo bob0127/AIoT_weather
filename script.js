@@ -5,6 +5,7 @@
 
 // Configuration Area (as specified in require.md Line 10)
 const CWA_API_KEY = 'CWA-3DCCCFFB-6B6A-43B7-8746-25D0B4BA03E4';
+const MOENV_API_KEY = '46effe84-6d88-4821-8860-21cfaefc33db';
 
 // 22 Taiwan Administrative Divisions Metadata
 const COUNTY_METADATA = {
@@ -223,6 +224,7 @@ function generateMockData() {
 // Application State
 const AppState = {
   apiKey: localStorage.getItem('cwa_api_key') || CWA_API_KEY,
+  moenvApiKey: localStorage.getItem('moenv_api_key') || MOENV_API_KEY,
   isMockMode: false,
   activeMetric: 'temp',
   selectedCountyId: 'TWTPE',
@@ -395,6 +397,41 @@ async function loadWeatherData(forceMock = false) {
       console.warn('O-A0003-001 observation fetch skipped:', obsErr);
     }
 
+    try {
+      const pm25Url = `https://data.moenv.gov.tw/api/v2/aqx_p_02?format=json&offset=0&api_key=${encodeURIComponent(AppState.moenvApiKey)}`;
+      const pm25Res = await fetch(pm25Url);
+
+      if (pm25Res.ok) {
+        const pm25Data = await pm25Res.json();
+        if (Array.isArray(pm25Data)) {
+          const pm25Group = {};
+          const targetTime = pm25Data[0].datacreationdate;
+          // 1. 先搜集各縣市所有有效的測站數據
+          pm25Data.forEach(s => {
+            if (s.datacreationdate === targetTime) {
+              const pm25cName = s.county.replace(/台/g, '臺');
+              if (!pm25Group[pm25cName]) {
+                pm25Group[pm25cName] = { pm25: [] };
+              }
+              const pm25 = parseFloat(s.pm25);
+              if (!isNaN(pm25) && pm25 >= 0) pm25Group[pm25cName].pm25.push(pm25);
+            }
+          });
+
+          // 2. 計算每個縣市的平均值或代表值
+          Object.keys(pm25Group).forEach(cName => {
+            const group = pm25Group[cName];
+            const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+
+            obsMap[cName].pm25 = avg(group.pm25) ? parseFloat(avg(group.pm25).toFixed(1)) : null;
+          });
+        }
+      }
+    } catch (moenvErr) {
+      console.warn('moenv pm2.5 observation fetch skipped:', moenvErr);
+    }
+
+
     // Parse Forecasts & Combine with Metadata
     const newCountyData = { ...AppState.countyData };
     const nameToId = {};
@@ -447,6 +484,7 @@ async function loadWeatherData(forceMock = false) {
       const currentHumidity = obs.humidity !== null && obs.humidity !== undefined ? obs.humidity : (pop > 50 ? 78 : 65);
       const currentRainfall = obs.rainfall !== null && obs.rainfall !== undefined ? obs.rainfall : (pop > 70 ? 4.5 : 0.0);
       const currentUV = obs.uvindex ?? 0.0;
+      const currentpm25 = obs.pm25 ?? 0.0;
 
       // Calibrate realistic PM2.5 based on region & moisture
       const meta = COUNTY_METADATA[id];
@@ -466,7 +504,7 @@ async function loadWeatherData(forceMock = false) {
         humidity: currentHumidity,
         rainfall: currentRainfall,
         pop,
-        pm25: estPm25,
+        pm25: currentpm25,
         wx,
         ci,
         forecasts: forecasts.length ? forecasts : newCountyData[id].forecasts
@@ -856,6 +894,9 @@ function initMetricSwitcher() {
       elements.activeMetricTitle.textContent = `${config.name} (${config.unit})`;
 
       updateHeatmapColors();
+
+      // Re-render 7-day chart with new metric
+      renderForecast7DayChart();
     });
   });
 }
@@ -872,6 +913,8 @@ function initThemeToggle() {
     document.documentElement.setAttribute('data-theme', next);
     localStorage.setItem('app_theme', next);
     updateThemeIcon(next);
+    // Re-render chart with new theme colors
+    renderForecast7DayChart();
   });
 }
 
@@ -903,6 +946,7 @@ function initSettingsModal() {
     elements.settingsMsg.style.color = '#38bdf8';
     elements.settingsMsg.textContent = '金鑰已儲存，正在連線測試 CWA API...';
     await loadWeatherData(false);
+    await load7DayForecastData();
     elements.settingsMsg.style.color = '#10b981';
     elements.settingsMsg.textContent = '連線測試完成！';
     setTimeout(closeModal, 800);
@@ -912,6 +956,7 @@ function initSettingsModal() {
   elements.btnForceLive.addEventListener('click', () => {
     closeModal();
     loadWeatherData(false);
+    load7DayForecastData();
   });
 
   // Force Mock
@@ -924,7 +969,527 @@ function initSettingsModal() {
 // Refresh Button
 elements.btnRefresh.addEventListener('click', () => {
   loadWeatherData(false);
+  load7DayForecastData();
 });
+
+// ==========================================================================
+// 7-Day Forecast Chart Module (F-D0047-091)
+// ==========================================================================
+
+// State for 7-day forecast
+const Forecast7Day = {
+  rawData: null,       // Parsed forecast data keyed by county name
+  selectedCounty: '臺北市',
+  isLoading: false
+};
+
+const ELEMENT_KEY_MAP = {
+  '平均溫度': 'Temperature',
+  '最高溫度': 'MaxTemperature',
+  '最低溫度': 'MinTemperature',
+  '平均相對濕度': 'RelativeHumidity',
+  '12小時降雨機率': 'ProbabilityOfPrecipitation',
+  '紫外線指數': 'UVIndex',
+};
+
+// Chart metric mapping: which fields from F-D0047-091 to use for each metric button
+const CHART_METRIC_MAP = {
+  temp: {
+    lines: [
+      { key: 'MaxTemperature', label: '最高溫', color: '#ef4444', dashStyle: [] },
+      { key: 'MinTemperature', label: '最低溫', color: '#38bdf8', dashStyle: [] },
+      { key: 'Temperature', label: '平均溫度', color: '#facc15', dashStyle: [6, 3] }
+    ],
+    unit: '°C',
+    title: '氣溫 (°C)'
+  },
+  humidity: {
+    lines: [
+      { key: 'RelativeHumidity', label: '相對濕度', color: '#3b82f6', dashStyle: [] }
+    ],
+    unit: '%',
+    title: '相對濕度 (%)'
+  },
+  rainfall: {
+    lines: [
+      { key: 'Rainfall', label: '累積降雨量', color: '#a855f7', dashStyle: [] }
+    ],
+    unit: 'mm',
+    title: '降雨量 (mm)'
+  },
+  pop: {
+    lines: [
+      { key: 'ProbabilityOfPrecipitation', label: '12小時降雨機率', color: '#a855f7', dashStyle: [] }
+    ],
+    unit: '%',
+    title: '降雨機率 (%)'
+  },
+  pm25: {
+    lines: [
+      { key: 'PM2.5', label: 'PM2.5', color: '#ff0000', dashStyle: [] }
+    ],
+    unit: 'μg/m³',
+    title: 'PM2.5 (μg/m³)'
+  },
+  uvindex: {
+    lines: [
+      { key: 'UVIndex', label: '紫外線指數', color: '#ef4444', dashStyle: [] }
+    ],
+    unit: 'UV Index',
+    title: '紫外線指數'
+  }
+};
+
+// Fetch 7-day forecast data from F-D0047-091
+async function load7DayForecastData() {
+  const apiKey = AppState.apiKey || CWA_API_KEY;
+  if (!apiKey) {
+    generate7DayMockData();
+    renderForecast7DayChart();
+    return;
+  }
+
+  Forecast7Day.isLoading = true;
+  const loadingEl = document.getElementById('forecast-chart-loading');
+  const statusTextEl = document.getElementById('forecast-chart-status-text');
+  if (loadingEl) loadingEl.classList.remove('hidden');
+  if (statusTextEl) statusTextEl.textContent = '載入中...';
+
+  try {
+    const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-091?Authorization=${encodeURIComponent(AppState.apiKey)}&format=JSON`;
+    const res = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
+
+    if (!res.ok) throw new Error(`F-D0047-091 API 回應錯誤 ${res.status}`);
+
+    const data = await res.json();
+    if (!data.success || !data.records || !data.records.Locations) {
+      throw new Error('F-D0047-091 回傳結構異常');
+    }
+
+    // Parse data
+    const parsed = {};
+    const locations = data.records.Locations[0]?.Location || [];
+
+    locations.forEach(loc => {
+      const countyName = loc.LocationName.replace(/台/g, '臺');
+      const elements_data = {};
+
+      loc.WeatherElement.forEach(elem => {
+        const eName = elem.ElementName;
+        const apiKey = ELEMENT_KEY_MAP[eName];
+        if (apiKey) {
+          elements_data[apiKey] = elem.Time.map(t => ({
+            startTime: t.StartTime,
+            endTime: t.EndTime,
+            value: parseFloat(t.ElementValue?.[0]?.[apiKey]) ?? null
+          }));
+        }
+      });
+
+      parsed[countyName] = elements_data;
+    });
+
+    Forecast7Day.rawData = parsed;
+
+    if (statusTextEl) {
+      statusTextEl.textContent = 'F-D0047-091 已連線';
+      const statusEl = document.getElementById('forecast-chart-status');
+      if (statusEl) statusEl.style.color = 'var(--accent-emerald)';
+    }
+
+  } catch (err) {
+    console.warn('F-D0047-091 fetch failed:', err);
+    generate7DayMockData();
+    if (statusTextEl) {
+      statusTextEl.textContent = '使用模擬資料';
+      const statusEl = document.getElementById('forecast-chart-status');
+      if (statusEl) statusEl.style.color = 'var(--accent-amber)';
+    }
+  } finally {
+    Forecast7Day.isLoading = false;
+    if (loadingEl) loadingEl.classList.add('hidden');
+    renderForecast7DayChart();
+  }
+}
+
+// Generate mock 7-day forecast data
+function generate7DayMockData() {
+  const mockData = {};
+  const now = new Date();
+
+  Object.values(COUNTY_METADATA).forEach(meta => {
+    const countyName = meta.name;
+    const baseTemp = meta.region === '南部' ? 30 : (meta.region === '北部' ? 27 : 28);
+    const t_data = [], maxT_data = [], minT_data = [], rh_data = [], pop_data = [];
+
+    for (let d = 0; d < 14; d++) { // 14 half-day periods = 7 days
+      const date = new Date(now);
+      date.setHours(d % 2 === 0 ? 6 : 18, 0, 0, 0);
+      date.setDate(now.getDate() + Math.floor(d / 2));
+      const endDate = new Date(date);
+      endDate.setHours(endDate.getHours() + 12);
+
+      const variation = Math.sin(d * 0.5) * 3 + (Math.random() - 0.5) * 2;
+      const tVal = (baseTemp + variation).toFixed(0);
+      const maxVal = (baseTemp + 3 + Math.random() * 2).toFixed(0);
+      const minVal = (baseTemp - 3 - Math.random() * 2).toFixed(0);
+      const rhVal = (65 + Math.random() * 25).toFixed(0);
+      const popVal = (Math.random() * 80).toFixed(0);
+
+      const fmt = dt => dt.toISOString().slice(0, 19).replace('T', ' ');
+
+      t_data.push({ startTime: fmt(date), endTime: fmt(endDate), value: tVal });
+      maxT_data.push({ startTime: fmt(date), endTime: fmt(endDate), value: maxVal });
+      minT_data.push({ startTime: fmt(date), endTime: fmt(endDate), value: minVal });
+      rh_data.push({ startTime: fmt(date), endTime: fmt(endDate), value: rhVal });
+      pop_data.push({ startTime: fmt(date), endTime: fmt(endDate), value: popVal });
+    }
+
+    mockData[countyName] = { T: t_data, MaxT: maxT_data, MinT: minT_data, RH: rh_data, PoP12h: pop_data };
+  });
+
+  Forecast7Day.rawData = mockData;
+}
+
+// Render the line chart on Canvas
+function renderForecast7DayChart() {
+  const canvas = document.getElementById('forecast-chart-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  // Get device pixel ratio for crisp rendering
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+
+  const W = rect.width;
+  const H = rect.height;
+
+  // Detect theme
+  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+  const colors = {
+    bg: isDark ? '#0a1020' : '#f8fafc',
+    grid: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)',
+    axis: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)',
+    text: isDark ? '#94a3b8' : '#475569',
+    textBright: isDark ? '#e2e8f0' : '#1e293b'
+  };
+
+  // Clear
+  ctx.clearRect(0, 0, W, H);
+
+  // Get metric config
+  const metric = AppState.activeMetric;
+  const chartConfig = CHART_METRIC_MAP[metric] || null;
+
+  // Update subtitle
+  const subtitleEl = document.getElementById('forecast-chart-subtitle');
+  if (subtitleEl) subtitleEl.textContent = `${Forecast7Day.selectedCounty}-當前指標：${chartConfig.title}`;
+
+  // Get county data
+  const countyName = Forecast7Day.selectedCounty;
+  const countyForecast = Forecast7Day.rawData?.[countyName];
+
+  if (!countyForecast) {
+    ctx.fillStyle = colors.text;
+    ctx.font = '14px Outfit, Noto Sans TC, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${countyName} 無預報資料`, W / 2, H / 2);
+    return;
+  }
+
+  // Chart margins
+  const margin = { top: 30, right: 30, bottom: 55, left: 50 };
+  const chartW = W - margin.left - margin.right;
+  const chartH = H - margin.top - margin.bottom;
+
+  // Collect all data points for each line
+  const lineDatasets = [];
+  let globalMin = Infinity, globalMax = -Infinity;
+
+  chartConfig.lines.forEach(lineCfg => {
+    const rawPoints = countyForecast[lineCfg.key];
+    if (!rawPoints || rawPoints.length === 0) return;
+    const points = rawPoints.map(p => ({
+      time: new Date(p.startTime.replace(' ', 'T')),
+      value: parseFloat(p.value)
+    })).filter(p => !isNaN(p.value));
+
+    if (points.length === 0) return;
+
+    points.forEach(p => {
+      if (p.value < globalMin) globalMin = p.value;
+      if (p.value > globalMax) globalMax = p.value;
+    });
+
+    lineDatasets.push({ ...lineCfg, points });
+  });
+
+  if (lineDatasets.length === 0) {
+    ctx.fillStyle = colors.text;
+    ctx.font = '14px Outfit, Noto Sans TC, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${countyName}: 此指標無可用預報數據`, W / 2, H / 2);
+    return;
+  }
+
+  // Add padding to min/max
+  const range = globalMax - globalMin;
+  const padding = Math.max(range * 0.15, 2);
+  globalMin = Math.floor(globalMin - padding);
+  globalMax = Math.ceil(globalMax + padding);
+
+  // Time range
+  let allTimes = [];
+  lineDatasets.forEach(ds => ds.points.forEach(p => allTimes.push(p.time.getTime())));
+  const timeMin = Math.min(...allTimes);
+  const timeMax = Math.max(...allTimes);
+  const timeRange = timeMax - timeMin || 1;
+
+  // Scale functions
+  const scaleX = t => margin.left + ((t - timeMin) / timeRange) * chartW;
+  const scaleY = v => margin.top + chartH - ((v - globalMin) / (globalMax - globalMin)) * chartH;
+
+  // Draw grid lines (horizontal)
+  const yTicks = 6;
+  ctx.strokeStyle = colors.grid;
+  ctx.lineWidth = 1;
+  ctx.font = '11px Outfit, Noto Sans TC, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = colors.text;
+
+  for (let i = 0; i <= yTicks; i++) {
+    const val = globalMin + (i / yTicks) * (globalMax - globalMin);
+    const y = scaleY(val);
+
+    ctx.beginPath();
+    ctx.setLineDash([3, 3]);
+    ctx.moveTo(margin.left, y);
+    ctx.lineTo(W - margin.right, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillText(`${Math.round(val)}`, margin.left - 8, y);
+  }
+
+  // Draw x-axis date labels
+  const daySet = new Set();
+  const dayLabels = [];
+  allTimes.sort((a, b) => a - b);
+  allTimes.forEach(t => {
+    const d = new Date(t);
+    const dayKey = `${d.getMonth() + 1}/${d.getDate()}`;
+    if (!daySet.has(dayKey)) {
+      daySet.add(dayKey);
+      dayLabels.push({ label: dayKey, time: t, dayOfWeek: ['日', '一', '二', '三', '四', '五', '六'][d.getDay()] });
+    }
+  });
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = colors.text;
+  ctx.font = '11px Outfit, Noto Sans TC, sans-serif';
+
+  dayLabels.forEach(dl => {
+    const x = scaleX(dl.time);
+    // Vertical guide line
+    ctx.strokeStyle = colors.grid;
+    ctx.setLineDash([2, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x, margin.top);
+    ctx.lineTo(x, margin.top + chartH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Date label
+    ctx.fillStyle = colors.text;
+    ctx.font = '11px Outfit, Noto Sans TC, sans-serif';
+    ctx.fillText(dl.label, x, margin.top + chartH + 8);
+    // Day of week
+    ctx.fillStyle = colors.textBright;
+    ctx.font = 'bold 11px Outfit, Noto Sans TC, sans-serif';
+    ctx.fillText(`(${dl.dayOfWeek})`, x, margin.top + chartH + 24);
+  });
+
+  // Unit label
+  ctx.fillStyle = colors.text;
+  ctx.font = '10px Outfit, Noto Sans TC, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(chartConfig.unit, margin.left, margin.top - 6);
+
+  // Draw axis lines
+  ctx.strokeStyle = colors.axis;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(margin.left, margin.top);
+  ctx.lineTo(margin.left, margin.top + chartH);
+  ctx.lineTo(W - margin.right, margin.top + chartH);
+  ctx.stroke();
+
+  // Draw lines with gradient fill
+  lineDatasets.forEach(ds => {
+    const pts = ds.points.sort((a, b) => a.time - b.time);
+    if (pts.length < 2) return;
+
+    // Gradient fill under line
+    const gradient = ctx.createLinearGradient(0, margin.top, 0, margin.top + chartH);
+    gradient.addColorStop(0, ds.color + '30');
+    gradient.addColorStop(1, ds.color + '05');
+
+    ctx.beginPath();
+    ctx.moveTo(scaleX(pts[0].time.getTime()), scaleY(pts[0].value));
+
+    // Smooth curve using bezier
+    for (let i = 1; i < pts.length; i++) {
+      const prev = pts[i - 1];
+      const curr = pts[i];
+      const prevX = scaleX(prev.time.getTime());
+      const prevY = scaleY(prev.value);
+      const currX = scaleX(curr.time.getTime());
+      const currY = scaleY(curr.value);
+      const cpx = (prevX + currX) / 2;
+      ctx.bezierCurveTo(cpx, prevY, cpx, currY, currX, currY);
+    }
+
+    // Fill area
+    const fillPath = new Path2D();
+    fillPath.moveTo(scaleX(pts[0].time.getTime()), scaleY(pts[0].value));
+    for (let i = 1; i < pts.length; i++) {
+      const prev = pts[i - 1];
+      const curr = pts[i];
+      const prevX = scaleX(prev.time.getTime());
+      const prevY = scaleY(prev.value);
+      const currX = scaleX(curr.time.getTime());
+      const currY = scaleY(curr.value);
+      const cpx = (prevX + currX) / 2;
+      fillPath.bezierCurveTo(cpx, prevY, cpx, currY, currX, currY);
+    }
+    fillPath.lineTo(scaleX(pts[pts.length - 1].time.getTime()), margin.top + chartH);
+    fillPath.lineTo(scaleX(pts[0].time.getTime()), margin.top + chartH);
+    fillPath.closePath();
+    ctx.fillStyle = gradient;
+    ctx.fill(fillPath);
+
+    // Draw line
+    ctx.beginPath();
+    ctx.strokeStyle = ds.color;
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    if (ds.dashStyle && ds.dashStyle.length) {
+      ctx.setLineDash(ds.dashStyle);
+    } else {
+      ctx.setLineDash([]);
+    }
+
+    ctx.moveTo(scaleX(pts[0].time.getTime()), scaleY(pts[0].value));
+    for (let i = 1; i < pts.length; i++) {
+      const prev = pts[i - 1];
+      const curr = pts[i];
+      const prevX = scaleX(prev.time.getTime());
+      const prevY = scaleY(prev.value);
+      const currX = scaleX(curr.time.getTime());
+      const currY = scaleY(curr.value);
+      const cpx = (prevX + currX) / 2;
+      ctx.bezierCurveTo(cpx, prevY, cpx, currY, currX, currY);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw data points
+    pts.forEach(p => {
+      const x = scaleX(p.time.getTime());
+      const y = scaleY(p.value);
+
+      // Outer glow
+      ctx.beginPath();
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = ds.color + '40';
+      ctx.fill();
+
+      // Inner dot
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = ds.color;
+      ctx.fill();
+      ctx.strokeStyle = isDark ? '#0a1020' : '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+
+    // Value labels on points (only show every other to reduce clutter)
+    ctx.font = 'bold 10px Outfit, Noto Sans TC, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    pts.forEach((p, i) => {
+      if (i % 2 !== 0 && pts.length > 6) return; // Skip every other if many points
+      const x = scaleX(p.time.getTime());
+      const y = scaleY(p.value);
+      ctx.fillStyle = ds.color;
+      ctx.fillText(`${Math.round(p.value)}`, x, y - 8);
+    });
+  });
+
+  // Update legend
+  updateChartLegend(lineDatasets);
+}
+
+// Update chart legend
+function updateChartLegend(lineDatasets) {
+  const legendRow = document.getElementById('forecast-chart-legend-row');
+  if (!legendRow) return;
+  legendRow.innerHTML = '';
+
+  lineDatasets.forEach(ds => {
+    const item = document.createElement('div');
+    item.className = 'forecast-chart-legend-item';
+
+    const lineEl = document.createElement('div');
+    lineEl.className = 'forecast-chart-legend-line';
+    lineEl.style.background = ds.color;
+    if (ds.dashStyle && ds.dashStyle.length) {
+      lineEl.style.background = `repeating-linear-gradient(90deg, ${ds.color} 0px, ${ds.color} 4px, transparent 4px, transparent 7px)`;
+    }
+
+    const label = document.createElement('span');
+    label.textContent = ds.label;
+
+    item.appendChild(lineEl);
+    item.appendChild(label);
+    legendRow.appendChild(item);
+  });
+}
+
+// Initialize the 7-day forecast chart module
+function initForecast7DayChart() {
+  // Sync chart county with main county selection
+  // Override selectCounty to also update chart
+  const origSelectCounty = selectCounty;
+  selectCounty = function (id) {
+    if (!COUNTY_METADATA[id]) return;
+    updateDetailCard(id);
+    // Also sync 7-day chart county
+    const meta = COUNTY_METADATA[id];
+    if (meta) {
+      Forecast7Day.selectedCounty = meta.name;
+      renderForecast7DayChart();
+    }
+  };
+
+  // Handle canvas resize
+  window.addEventListener('resize', () => {
+    clearTimeout(Forecast7Day._resizeTimer);
+    Forecast7Day._resizeTimer = setTimeout(() => renderForecast7DayChart(), 200);
+  });
+
+  // Load data
+  load7DayForecastData();
+}
 
 // App Initialization
 document.addEventListener('DOMContentLoaded', () => {
@@ -934,8 +1499,10 @@ document.addEventListener('DOMContentLoaded', () => {
   initMapControls();
   initThemeToggle();
   initSettingsModal();
+  initForecast7DayChart();
 
   // Load initial weather data
   loadWeatherData(false);
   updateDetailCard(AppState.selectedCountyId);
 });
+
