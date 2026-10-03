@@ -95,14 +95,16 @@ python -m http.server 8080
 
 ## ⚙️ API 設定說明 (API Configuration)
 
-預設已內建中央氣象署 CWA 預設公開金鑰以利即時預覽。若您希望使用自己的金鑰或更換 API 來源：
+預設已內建中央氣象署 CWA 及環境部 MOENV 預設公開金鑰以利即時預覽。若您希望使用自己的金鑰或更換 API 來源：
 
 1. 前往 [中央氣象署開放資料平臺](https://opendata.cwa.gov.tw/) 免費註冊並取得授權碼 (Authorization Code)。
-2. 點擊網頁右上角的 **設定 (⚙️)** 按鈕。
-3. 在彈出視窗中貼上您的 CWA API 金鑰並儲存。
-4. 亦可在 [`script.js`](file:///d:/AIoT_weather/script.js) 第 7 行直接修改預設金鑰常數：
+2. 前往 [環境部環境資料開放平臺](https://data.moenv.gov.tw/) 免費註冊並取得授權碼 (Authorization Code)。
+3. 點擊網頁右上角的 **設定 (⚙️)** 按鈕。
+4. 在彈出視窗中貼上您的 CWA API 金鑰並儲存。
+5. 亦可在 [`script.js`](file:///d:/AIoT_weather/script.js) 第 7 行直接修改預設金鑰常數：
    ```javascript
    const CWA_API_KEY = 'YOUR_CWA_API_KEY_HERE';
+   const MOENV_API_KEY = YOUR_MOENV_API_KEY_HERE';
    ```
 
 ---
